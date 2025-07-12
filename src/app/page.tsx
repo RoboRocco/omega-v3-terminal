@@ -1,163 +1,190 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-interface ComponentStatus {
-  name: string;
-  status: string;
-}
+const VERSION = 'Omega V3 CLI UX v1.3';
+const RELEASE = 'July 11, 2025';
+const USERNAME = 'omega';
+const PASSWORD = 'v3secure';
 
 export default function Home() {
-  const [logs, setLogs] = useState<string[]>([]);
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const [log, setLog] = useState<string[]>([]);
   const [input, setInput] = useState('');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [statusComponents, setStatusComponents] = useState<ComponentStatus[]>([]);
-  const [bootIndex, setBootIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [auth, setAuth] = useState(false);
+  const [loginStep, setLoginStep] = useState<'user' | 'pass'>('user');
+  const [tempUser, setTempUser] = useState('');
+  const [typingIndex, setTypingIndex] = useState(0);
+  const [isTyping, setIsTyping] = useState(false);
+  const [statusJson, setStatusJson] = useState<any>(null);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
 
-  const validPasscode = "omega2025";
-
-  const bootMessages = [
-    "Initializing Omega V3 Secure System...",
-    "Loading Core Modules ███▒▒▒▒▒",
-    "Verifying Integrity...",
-    "Establishing Secure Session...",
-    "Live status sync established.",
-    "Terminal Ready. Enter Access Code:",
+  const intro = [
+    '╔════════════════════════════════════════════════════════════════╗',
+    '║    🔒 OMEGA V3 CLI UX v1.3 — Hermida Enterprise Solutions     ║',
+    '║         Powered by myhtusa.com | Terminal Access Only         ║',
+    '╚════════════════════════════════════════════════════════════════╝',
+    '',
+    'System booting...',
   ];
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (bootIndex < bootMessages.length) {
-        setLogs((prev) => [...prev, bootMessages[bootIndex]]);
-        setBootIndex((i) => i + 1);
-      } else {
-        clearInterval(timer);
-      }
-    }, 800);
-    return () => clearInterval(timer);
-  }, [bootIndex]);
+    typeLines(intro, () => {
+      setLog(prev => [...prev, 'Enter username:']);
+    });
+  }, []);
 
-  useEffect(() => {
-    const session = localStorage.getItem('omegaLoggedIn');
-    if (session === 'true') {
-      setIsLoggedIn(true);
-      setLogs((prev) => [...prev, "> Session restored."]);
+  const typeLines = (lines: string[], callback: () => void) => {
+    let i = 0;
+    setIsTyping(true);
+    const interval = setInterval(() => {
+      setLog(prev => [...prev, lines[i]]);
+      i++;
+      if (i >= lines.length) {
+        clearInterval(interval);
+        setIsTyping(false);
+        callback();
+      }
+    }, 50);
+  };
+
+  const fetchStatus = async () => {
+    try {
+      const res = await fetch('https://88ykyzk8g5xs.statuspage.io/api/v2/components.json');
+      const json = await res.json();
+      setStatusJson(json);
+      const warnings = json.components.filter((c: any) =>
+        ['degraded_performance', 'major_outage'].includes(c.status)
+      );
+      if (warnings.length > 0) {
+        const warns = warnings.map((c: any) => `🚨 ${c.name}: ${c.status.toUpperCase()}`);
+        setLog(prev => [...prev, '', '⚠️ SYSTEM WARNINGS DETECTED:', ...warns]);
+      } else {
+        setLog(prev => [...prev, '', '✅ All systems operational.']);
+      }
+    } catch {
+      setLog(prev => [...prev, '⚠️ Unable to fetch live system status.']);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    const fetchStatus = async () => {
-      try {
-        const res = await fetch('https://88ykyzk8g5xs.statuspage.io/api/v2/components.json');
-        const data = await res.json();
-        setStatusComponents(data.components || []);
-      } catch (err) {
-        console.error('Failed to fetch status:', err);
-      }
-    };
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 15000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleCommand = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cmd = input.trim().toLowerCase();
-    if (!cmd) return;
-    setLogs(prev => [...prev, `> ${cmd}`]);
-
-    if (!isLoggedIn) {
-      if (cmd === validPasscode) {
-        setLogs(prev => [...prev, '> ✅ Access granted. Welcome, Commander.']);
-        setIsLoggedIn(true);
-        localStorage.setItem('omegaLoggedIn', 'true');
+  const handleCommand = () => {
+    if (!auth) {
+      if (loginStep === 'user') {
+        setTempUser(input);
+        setLog(prev => [...prev, `> ${input}`, 'Enter password:']);
+        setLoginStep('pass');
+        setInput('');
       } else {
-        setLogs(prev => [...prev, '> ❌ Invalid access code.']);
+        setLog(prev => [...prev, '> ********']);
+        if (tempUser === USERNAME && input === PASSWORD) {
+          setAuth(true);
+          setCommandHistory([]);
+          fetchStatus();
+          setLog(prev => [...prev, '', '✅ Access granted.', 'Type `help` to get started.']);
+        } else {
+          setLog(prev => [...prev, '❌ Invalid login.', '', 'Enter username:']);
+          setLoginStep('user');
+        }
+        setInput('');
+        return;
       }
-      setInput('');
       return;
     }
 
+    const cmd = input.trim().toLowerCase();
+    setCommandHistory(prev => [...prev, cmd]);
+    const update = [`> ${cmd}`];
+
     switch (cmd) {
       case 'help':
-        setLogs(prev => [
+        setLog(prev => [
           ...prev,
-          '> Available Commands:',
-          '> help - List all commands',
-          '> status - Fetch latest system status',
-          '> clear - Clear screen',
-          '> whoami - Show session info',
-          '> logout - End session',
-          '> reboot - Restart terminal',
+          ...update,
+          '',
+          'Available commands:',
+          'help     — List all commands',
+          'status   — Live system status',
+          'version  — Current CLI build info',
+          'credits  — About Hermida Enterprise',
+          'clear    — Clear screen',
+          'history  — Show past commands',
+          'logout   — End session',
+          'eject    — Reset session + wipe',
+        ]);
+        break;
+      case 'status':
+        if (statusJson?.components) {
+          const statuses = statusJson.components.map(
+            (c: any) => `🔧 ${c.name}: ${c.status.toUpperCase()}`
+          );
+          setLog(prev => [...prev, ...update, '', ...statuses]);
+        } else {
+          setLog(prev => [...prev, ...update, '⚠️ Status unavailable.']);
+        }
+        break;
+      case 'version':
+        setLog(prev => [...prev, ...update, `${VERSION} — Released ${RELEASE}`]);
+        break;
+      case 'credits':
+        setLog(prev => [
+          ...prev,
+          ...update,
+          '',
+          'Hermida Enterprise Solutions — Innovating HTUSA+, Fintra+, Omega V3, MyShare, ZeroBreak.',
+          'Official site: myhtusa.com',
         ]);
         break;
       case 'clear':
-        setLogs([]);
+        setLog([]);
         break;
-      case 'status':
-        const statusOutput = statusComponents.map(
-          (c) => `> ${c.name}: ${c.status.toUpperCase()}`
-        );
-        setLogs(prev => [...prev, '> STATUS REPORT:', ...statusOutput]);
-        break;
-      case 'whoami':
-        setLogs(prev => [...prev, '> User: guest\n> Role: observer\n> Access: Local Authenticated']);
+      case 'history':
+        setLog(prev => [...prev, ...update, ...commandHistory]);
         break;
       case 'logout':
-        localStorage.removeItem('omegaLoggedIn');
-        setIsLoggedIn(false);
-        setLogs(['> Session terminated. Please enter access code.']);
+        setAuth(false);
+        setLoginStep('user');
+        setTempUser('');
+        setLog([...intro, '', 'Enter username:']);
         break;
-      case 'reboot':
-        setLogs(['> Rebooting system...']);
-        setTimeout(() => window.location.reload(), 1200);
+      case 'eject':
+        window.localStorage.clear();
+        setAuth(false);
+        setLoginStep('user');
+        setTempUser('');
+        setLog(['🧨 Session ejected. Reloading...']);
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
         break;
       default:
-        setLogs(prev => [...prev, `> ❓ Unknown command: ${cmd}`]);
+        setLog(prev => [...prev, ...update, `❌ Unknown command: ${cmd}`]);
     }
 
     setInput('');
+    terminalRef.current?.scrollTo(0, terminalRef.current.scrollHeight);
   };
 
   return (
-    <main className="flex flex-col md:flex-row min-h-screen bg-black text-green-400 font-mono">
-      <div className="w-full md:w-2/3 p-4 border-r border-green-900" onClick={() => inputRef.current?.focus()}>
-        <div className="border border-green-700 p-2 mb-4 text-center text-green-300 font-bold tracking-widest glow animate-pulse">
-          *** OMEGA V3 CLI UX v1.2 — SECURE TERMINAL ACCESS ***
-        </div>
-        <div className="overflow-y-auto h-[80vh] glow" style={{ whiteSpace: 'pre-wrap' }}>
-          {logs.map((log, i) => (
-            <div key={i} className="animate-typing">{log}</div>
-          ))}
-        </div>
-        <form onSubmit={handleCommand} className="flex mt-4">
-          <span className="mr-2 text-green-500">&gt;</span>
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            className="bg-black text-green-400 outline-none w-full"
-            placeholder={isLoggedIn ? '' : 'Enter Access Code'}
-            autoFocus
-          />
-        </form>
+    <main className="bg-black text-[#00fff7] h-screen w-screen flex flex-col items-center justify-center p-4 font-mono text-sm">
+      <div
+        ref={terminalRef}
+        className="w-full max-w-4xl h-[70vh] overflow-y-auto border border-[#00fff7] p-4 bg-black rounded-md shadow-xl scroll-smooth"
+      >
+        {log.map((line, i) => (
+          <div key={i} className="whitespace-pre">{line}</div>
+        ))}
       </div>
 
-      <div className="w-full md:w-1/3 p-4 bg-green-900/10 text-green-300 border-l border-green-700">
-        <h2 className="text-lg font-bold mb-2 underline">Live System Status</h2>
-        {statusComponents.length > 0 ? (
-          <ul className="space-y-1">
-            {statusComponents.map((c, i) => (
-              <li key={i}>
-                <strong>{c.name}</strong>: {c.status.toUpperCase()}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>Loading status...</p>
-        )}
-      </div>
+      <input
+        disabled={isTyping}
+        className="w-full max-w-4xl mt-4 p-2 text-[#00fff7] bg-black border-b border-[#00fff7] focus:outline-none"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleCommand();
+        }}
+        placeholder={isTyping ? '' : '> Enter command'}
+      />
     </main>
   );
 }
